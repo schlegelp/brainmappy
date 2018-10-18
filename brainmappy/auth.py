@@ -17,73 +17,95 @@
 
 """ This module handles Google authentication """
 
-from httplib2 import Http
 import os
 import sys
+import json
 
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import AuthorizedSession, Request
+from six.moves import http_client
 import googleapiclient.discovery
+import google_auth_httplib2
 
-from oauth2client.file import Storage
-from oauth2client.client import OAuth2WebServerFlow
+_BRAINMAPS_SCOPES = ["https://www.googleapis.com/auth/brainmaps"]
+_REFRESH_CODES = (http_client.UNAUTHORIZED, http_client.FORBIDDEN)
 
-
-def acquire_credentials(CLIENT_ID=None, CLIENT_SECRET=None, use_stored=True,
-                        store=True,
-                        storage_path=os.path.expanduser("~/.google_api_cred")):
-    """Acquire credentials for brainmaps API. """
-    # CLIENT_ID and CLIENT_SECRET come from
-    # https://console.developers.google.com/apis/credentials
-
-    CLIENT_ID = CLIENT_ID if CLIENT_ID else os.environ.get('CLIENT_ID', None)
-    CLIENT_SECRET = CLIENT_SECRET if CLIENT_SECRET else os.environ.get('CLIENT_SECRET', None)
-
-    if not CLIENT_ID:
-        raise ValueError('Must provide client ID or set as "CLIENT_ID"'
-                        'environment variable.')
-
-    if not CLIENT_SECRET:
-        raise ValueError('Must provide client ID or set as "CLIENT_SECRET"'
-                         'environment variable.')
+def acquire_credentials(client_secret_file=None, client_id=None, client_secret=None,
+                        use_stored=True, store=True,
+                        storage_path=os.path.expanduser("~/.google_api_cred"),
+                        gui_auth=False):
+    """Acquire credentials for brainmaps API.
+       client_secret_file or both client_id and client_secret are required on first run.
+       After that, the values are read from storage_path.
+    """
+    # Construct authentication from a client secrets file,
+    # available from https://console.developers.google.com/
 
     if use_stored and os.path.isfile(storage_path):
-        storage = Storage(storage_path)
-        credentials = storage.get()
+        credentials = Credentials.from_authorized_user_file(storage_path,
+            scopes=_BRAINMAPS_SCOPES)
     else:
-        flow = OAuth2WebServerFlow(client_id=CLIENT_ID,
-                                   client_secret=CLIENT_SECRET,
-                                   scope="https://www.googleapis.com/auth/brainmaps",
-                                   redirect_uri="urn:ietf:wg:oauth:2.0:oob",
-                                   access_type="offline")
-        auth_uri = flow.step1_get_authorize_url()
-        auth_code = input("Enter the authentication code: ")
-        credentials = flow.step2_exchange(auth_code)
-    if store is not None:
-        storage = Storage(storage_path)
-        storage.put(credentials)
+        if client_secret_file:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                client_secret_file,
+                scopes=_BRAINMAPS_SCOPES,
+                redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+        elif client_id and client_secret:
+            flow = InstalledAppFlow.from_client_config(
+                {
+                    "installed": {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://www.googleapis.com/oauth2/v3/token"
+                    }
+                },
+                scopes=_BRAINMAPS_SCOPES,
+                redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+        else:
+            raise Exception("Valid credentials required.")
+        if gui_auth:
+            flow.run_local_server()
+        else:
+            flow.run_console()
+        credentials = flow.credentials
+        if store:
+            store_credentials(credentials, storage_path)
     return credentials
 
-def create_service(credentials, make_global=True):
-    """Create brainmaps API service. """
-    if credentials.access_token_expired:
-        http_auth = credentials.refresh(Http())
-    else:
-        http_auth = credentials.authorize(Http())
+def refresh_credential(credential):
+    credentials.refresh(Request())
 
+def store_credentials(credentials, storage_path):
+    stored_credentials = {
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'refresh_token': credentials.refresh_token,
+        'token_uri' : credentials.token_uri
+    }
+    with open(storage_path, 'w') as outfile:
+        json.dump(stored_credentials, outfile, indent=4)
+
+def get_authed_session(credentials):
+    """Get a requests() object capable of automatically refreshing tokens.
+    This object can be used for RESTful API requests.
+    """
+    return AuthorizedSession(credentials,
+        refresh_status_codes=_REFRESH_CODES)
+
+def create_service(credentials, make_global=True):
+    """Create brainmaps API service.
+    """
+    authed_http = google_auth_httplib2.AuthorizedHttp(credentials)
     service = googleapiclient.discovery.build('brainmaps', 'v1',
-                                              http=http_auth,
-                                              cache_discovery=False)
+                                            http=authed_http,
+                                            cache_discovery=False)
 
     if make_global:
         sys.modules['service'] = service
 
     return service
-
-def refresh_credentials(credentials, store=True,
-                        storage_path=os.path.expanduser("~/.google_api_cred")):
-    credentials.refresh(Http())
-    if store:
-        storage = Storage(storage_path)
-        storage.put(credentials)
 
 def _eval_service(service, raise_error=True):
     """ Evaluates brainmaps service and checks for globally defined service as
