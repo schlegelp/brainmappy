@@ -27,6 +27,7 @@ from google.auth.transport.requests import AuthorizedSession, Request
 from six.moves import http_client
 import googleapiclient.discovery
 import google_auth_httplib2
+import httplib2shim
 
 _BRAINMAPS_SCOPES = ["https://www.googleapis.com/auth/brainmaps"]
 _REFRESH_CODES = (http_client.UNAUTHORIZED, http_client.FORBIDDEN)
@@ -97,7 +98,12 @@ def get_authed_session(credentials):
 def create_service(credentials, make_global=True):
     """Create brainmaps API service.
     """
-    authed_http = google_auth_httplib2.AuthorizedHttp(credentials)
+
+    http = httplib2shim.Http()
+    authed_http = google_auth_httplib2.AuthorizedHttp(credentials,
+        refresh_status_codes=_REFRESH_CODES,
+        max_refresh_attempts=3,
+        http=http )
     service = googleapiclient.discovery.build('brainmaps', 'v1',
                                             http=authed_http,
                                             cache_discovery=False)
