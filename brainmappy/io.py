@@ -10,29 +10,27 @@
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along
 
 
 """ This module contains functions to convert data.
 """
 
 import argparse
-from collections import OrderedDict
-import colorsys
 import io
 import json
 import os
 import re
 import requests
-from requests_futures.sessions import FuturesSession
 import shlex
-from six.moves import http_cookies as Cookie
 import struct
 
+from collections import OrderedDict
+from requests_futures.sessions import FuturesSession
+from six.moves import http_cookies as Cookie
 from tqdm import tqdm
+
 import numpy as np
+import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument('command')
@@ -46,7 +44,7 @@ parser.add_argument('--insecure', action='store_true')
 
 
 def get_ng_meshes(x=None):
-    """ Load neuroglancer meshes from cURLs.
+    """Load neuroglancer meshes from cURLs.
 
     Parameters
     ----------
@@ -58,8 +56,8 @@ def get_ng_meshes(x=None):
     dict
                 ``{object_id : {'verts': [[x1, y1, z1], [...]],
                                 'faces': [[v1, v2, v3], [...]]}}``
-    """
 
+    """
     if isinstance(x, type(None)):
         # Read without any delimiting
         x = pd.read_clipboard(delimiter='\t', header=None)[0].values
@@ -111,14 +109,15 @@ def get_ng_meshes(x=None):
             faces += n_prev
 
     # Stack vertices and faces
-    for ob, c in zip(data, colors):
+    for ob in data:
         data[ob]['verts'] = np.vstack(data[ob]['verts'])
         data[ob]['faces'] = np.vstack(data[ob]['faces'])
 
     return data
 
+
 def parse_curls(x):
-    """ Extract headers and data for requests from neuroglancer mesh cURLs.
+    """Extract headers and data for requests from neuroglancer mesh cURLs.
 
     Parameters
     ----------
@@ -130,8 +129,8 @@ def parse_curls(x):
     headers :   list of dicts
     data :      list of dicts
     urls :      list of str
-    """
 
+    """
     if isinstance(x, str) and os.path.isfile(x):
         with open(x, 'r') as f:
             return [uncurl(line) for line in f]
@@ -202,13 +201,13 @@ def uncurl(curl):
             quoted_headers[header_key] = header_value.strip()
 
     return requests.Request(method, parsed_args.url,
-                            data=post_data,
+                            data=post_data_json,
                             headers=quoted_headers,
                             cookies=cookie_dict)
 
 
 def parse_raw_ng(x):
-    """ Parse neuroglancer's custom binary mesh format.
+    """Parse neuroglancer's custom binary mesh format.
 
     Parameters
     ----------
@@ -236,17 +235,18 @@ def parse_raw_ng(x):
     - face indices - int ({n_faces} * 3 * 4 bytes)
 
     """
-
     if not isinstance(x, (bytes, io.BufferedIOBase)):
         raise TypeError('Unable to parse data of type {}'.format(type(x)))
 
     # Turn bytes into a file-like object if necessary
     f = io.BytesIO(x) if isinstance(x, bytes) else x
 
+    size = os.path.getsize(f.name) if isinstance(x, io.BufferedIOBase) else len(x)
+
     verts = []
     faces = []
     filenames = []
-    while f.tell() < len(x):
+    while f.tell() < size:
         object_id, filenamelen = struct.unpack('qi4x', f.read(16))
         fn, n_verts, n_faces = struct.unpack('{}s2q'.format(filenamelen),
                                              f.read(filenamelen + 8 + 8))

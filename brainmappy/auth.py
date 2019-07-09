@@ -11,9 +11,6 @@
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along
 
 """ This module handles Google authentication """
 
@@ -22,30 +19,30 @@ import sys
 import json
 
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import AuthorizedSession, Request
+from google.auth.transport.requests import AuthorizedSession
 from six.moves import http_client
-import googleapiclient.discovery
-import google_auth_httplib2
 
 _BRAINMAPS_SCOPES = ["https://www.googleapis.com/auth/brainmaps"]
 _REFRESH_CODES = (http_client.UNAUTHORIZED, http_client.FORBIDDEN)
 
-def acquire_credentials(client_secret_file=None, client_id=None, client_secret=None,
-                        use_stored=True, store=True,
-                        storage_path=os.path.expanduser("~/.google_api_cred"),
-                        gui_auth=False):
-    """Acquire credentials for brainmaps API.
-       client_secret_file or both client_id and client_secret are required on first run.
-       After that, the values are read from storage_path.
+
+def acquire_credentials(client_secret_file=None,
+                        client_id=None,
+                        client_secret=None,
+                        use_stored=True,
+                        store=True,
+                        make_global=True,
+                        gui_auth=False,
+                        storage_path=os.path.expanduser("~/.google_api_cred")):
+    """Acquire credentials for brainmaps API and return authorized session.
+
+    client_secret_file or both client_id and client_secret are required on
+    first run. After that, the values are read from storage_path.
     """
     # Construct authentication from a client secrets file,
     # available from https://console.developers.google.com/
 
-    if use_stored and os.path.isfile(storage_path):
-        credentials = Credentials.from_authorized_user_file(storage_path,
-            scopes=_BRAINMAPS_SCOPES)
-    else:
+    if client_secret_file or (client_id and client_secret):
         if client_secret_file:
             flow = InstalledAppFlow.from_client_secrets_file(
                 client_secret_file,
@@ -65,74 +62,62 @@ def acquire_credentials(client_secret_file=None, client_id=None, client_secret=N
                 redirect_uri="urn:ietf:wg:oauth:2.0:oob")
         else:
             raise Exception("Valid credentials required.")
+
         if gui_auth:
             flow.run_local_server()
         else:
             flow.run_console()
+
         credentials = flow.credentials
         if store:
             store_credentials(credentials, storage_path)
-    return credentials
+    elif use_stored and os.path.isfile(storage_path):
+        flow = InstalledAppFlow.from_client_secrets_file(
+                storage_path,
+                scopes=_BRAINMAPS_SCOPES,
+                redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+    else:
+        raise Exception("Valid credentials required.")
 
-def refresh_credential(credential):
-    credentials.refresh(Request())
+    if make_global:
+        sys.modules['brainmap_flow'] = flow
+        sys.modules['brainmap_session'] = flow.authorized_session()
+
+    return flow
+
 
 def store_credentials(credentials, storage_path):
-    stored_credentials = {
+    """Store credentials in json file."""
+    stored_credentials = {'installed': {
         'client_id': credentials.client_id,
         'client_secret': credentials.client_secret,
         'refresh_token': credentials.refresh_token,
-        'token_uri' : credentials.token_uri
-    }
+        'token_uri': credentials.token_uri
+    }}
     with open(storage_path, 'w') as outfile:
         json.dump(stored_credentials, outfile, indent=4)
 
-def get_authed_session(credentials):
-    """Get a requests() object capable of automatically refreshing tokens.
-    This object can be used for RESTful API requests.
-    """
-    return AuthorizedSession(credentials,
-        refresh_status_codes=_REFRESH_CODES)
 
-def create_service(credentials, make_global=True):
-    """Create brainmaps API service.
-    """
-    authed_http = google_auth_httplib2.AuthorizedHttp(credentials)
-    service = googleapiclient.discovery.build('brainmaps', 'v1',
-                                            http=authed_http,
-                                            cache_discovery=False)
-
-    if make_global:
-        sys.modules['service'] = service
-
-    return service
-
-def _eval_service(service, raise_error=True):
-    """ Evaluates brainmaps service and checks for globally defined service as
-    fall back.
-    """
-
-    if service is None:
-        if 'service' in sys.modules:
-            return sys.modules['service']
-        elif 'service' in globals():
-            return globals()['service']
+def _eval_session(session=None, raise_error=True):
+    """Evaluate brainmaps session and checks for globally defined session."""
+    if session is None:
+        if 'brainmap_session' in sys.modules:
+            return sys.modules['brainmap_session']
+        elif 'brainmap_session' in globals():
+            return globals()['brainmap_session']
         else:
             if raise_error:
-                raise Exception('Please either pass a brainmaps service or '
+                raise Exception('Please either pass a brainmaps session or '
                                 'define globally as "service" ')
-    elif not isinstance(service, googleapiclient.discovery.Resource):
-        error = 'Expected None or Resource, got {}'.format(type(service))
+    elif not isinstance(session, AuthorizedSession):
+        error = 'Expected None or Resource, got {}'.format(type(session))
         if raise_error:
             raise TypeError(error)
 
-    return service
+    return session
 
 def _eval_volumeId(volumeId, raise_error=True):
-    """ Evaluates volume Id and checks for globally defined service as
-    fall back.
-    """
-
+    """Evaluate volume Id and checks for globally defined service."""
     if volumeId is None:
         if 'volumeId' in sys.modules:
             return sys.modules['volumeId']
@@ -141,7 +126,7 @@ def _eval_volumeId(volumeId, raise_error=True):
         else:
             if raise_error:
                 raise Exception('Please either pass a volumeId as string or '
-                                'define globally as "volumeId" ')
+                                'define globally as "volumeId"')
     elif not isinstance(volumeId, str):
         error = 'Expected None or string, got {}'.format(type(volumeId))
         if raise_error:
@@ -150,7 +135,5 @@ def _eval_volumeId(volumeId, raise_error=True):
     return volumeId
 
 def set_global_volume(vol):
-    """ Set global volume """
+    """Set global volume."""
     sys.modules['volumeId'] = vol
-
-

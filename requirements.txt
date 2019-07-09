@@ -1,11 +1,8 @@
-tqdm==4.25.0
-numpy==1.15.2
-six==1.11.0
-setuptools==40.4.3
-requests==2.19.1
-requests_futures==0.9.7
-google-api-python-client==1.7.4
+tqdm
+numpy
+pandas
+six
+setuptools
+requests
 google-auth
 google-auth-oauthlib
-google-auth-httplib2
-requests_oauthlib

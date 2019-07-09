@@ -29,20 +29,29 @@ Automatically installed with `pip`:
 Authenticate:
 
 ```Python
-from brainmappy import auth
+import brainmappy as bm
+
+# Authenticate and set these credentials as default
+flow = bm.acquire_credentials('client_secret.json',
+                              use_stored=False,
+                              make_global=True)
 
 # Set a default volume for convenience
-auth.set_global_volume('12345678:some_volume_of_interest')
-
-# Authenticate using your client ID and secret
-s = auth.create_service(auth.acquire_credentials(CLIENT_ID, CLIENT_SECRET),
-                        make_global=True)
+bm.set_global_volume('772153499790:fafb_v14:fafb_v14_16nm_v00c_split3xfill2')
 ```
 
-Fetch all fragments constituting an object
+Fetch list of all fragments constituting an object:
 
 ```Python
-from brainmappy import fetch
-
-verts, faces = fetch.get_meshes_batch(21716312853)
+fragments = bm.get_fragments(21716312853)
 ```
+
+Get mesh for given object:
+
+```Python
+verts, faces = bm.get_meshes_batch(21716312853)
+```
+
+## Brainmaps Documentation
+
+Documentation for the brainmaps API can be found [here](https://developers.google.com/brainmaps/help_pages/python_quickstart).
