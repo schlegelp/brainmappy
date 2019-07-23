@@ -17,9 +17,11 @@
 import os
 import sys
 import json
+import pickle
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import AuthorizedSession
+from google.auth.transport.requests import Request
 from six.moves import http_client
 
 _BRAINMAPS_SCOPES = ["https://www.googleapis.com/auth/brainmaps"]
@@ -33,8 +35,8 @@ def acquire_credentials(client_secret_file=None,
                         store=True,
                         make_global=True,
                         gui_auth=False,
-                        storage_path=os.path.expanduser("~/.google_api_cred")):
-    """Acquire credentials for brainmaps API and return authorized session.
+                        storage_path=os.path.expanduser("~/creds.pickle")):
+    """Acquire credentials for brainmaps API and return a AuthorizedSession.
 
     client_secret_file or both client_id and client_secret are required on
     first run. After that, the values are read from storage_path.
@@ -46,8 +48,7 @@ def acquire_credentials(client_secret_file=None,
         if client_secret_file:
             flow = InstalledAppFlow.from_client_secrets_file(
                 client_secret_file,
-                scopes=_BRAINMAPS_SCOPES,
-                redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+                scopes=_BRAINMAPS_SCOPES)
         elif client_id and client_secret:
             flow = InstalledAppFlow.from_client_config(
                 {
@@ -55,7 +56,7 @@ def acquire_credentials(client_secret_file=None,
                         "client_id": client_id,
                         "client_secret": client_secret,
                         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://www.googleapis.com/oauth2/v3/token"
+                        "token_uri": "https://oauth2.googleapis.com/token",
                     }
                 },
                 scopes=_BRAINMAPS_SCOPES,
@@ -68,34 +69,31 @@ def acquire_credentials(client_secret_file=None,
         else:
             flow.run_console()
 
-        credentials = flow.credentials
-        if store:
-            store_credentials(credentials, storage_path)
+        session = flow.authorized_session()
+        creds = flow.credentials
     elif use_stored and os.path.isfile(storage_path):
-        flow = InstalledAppFlow.from_client_secrets_file(
-                storage_path,
-                scopes=_BRAINMAPS_SCOPES,
-                redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+        with open(storage_path, 'rb') as token:
+            creds = pickle.load(token)
+        session = AuthorizedSession(creds)
     else:
         raise Exception("Valid credentials required.")
 
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            raise Exception('Credentials invalid but unable to refresh.')
+
+    if store:
+        # Save the credentials for the next run
+        with open(storage_path, 'wb') as token:
+            pickle.dump(creds, token)
+
     if make_global:
-        sys.modules['brainmap_flow'] = flow
-        sys.modules['brainmap_session'] = flow.authorized_session()
+        sys.modules['brainmap_credentials'] = creds
+        sys.modules['brainmap_session'] = session
 
-    return flow
-
-
-def store_credentials(credentials, storage_path):
-    """Store credentials in json file."""
-    stored_credentials = {'installed': {
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri
-    }}
-    with open(storage_path, 'w') as outfile:
-        json.dump(stored_credentials, outfile, indent=4)
+    return session
 
 
 def _eval_session(session=None, raise_error=True):
