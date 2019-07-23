@@ -22,21 +22,31 @@ Automatically installed with `pip`:
 3. Create a new project and activate the brainmaps API for this project via
    the dashboard.
 4. Generate an OAuth 2.0 client ID for the project and save `client ID` and
-   `client secret`.
+   `client secret` as `client_secret.json`
 
 ## Examples
 
-Authenticate:
+First time authenticate:
 
 ```Python
 import brainmappy as bm
 
 # Authenticate and set these credentials as default
-flow = bm.acquire_credentials('client_secret.json',
-                              use_stored=False,
-                              make_global=True)
+session = bm.acquire_credentials('client_secret.json',
+                                 use_stored=False,
+                                 make_global=True)
+```
 
-# Set a default volume for convenience
+Credentials are stored, so from now on you can just run this:
+
+```Python
+session = bm.acquire_credentials()
+```
+
+Many functions require specifying a volume ID. You can pass this explicitly
+or define a single volume as default:
+
+```Python
 bm.set_global_volume('772153499790:fafb_v14:fafb_v14_16nm_v00c_split3xfill2')
 ```
 
