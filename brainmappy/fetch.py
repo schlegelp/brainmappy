@@ -415,7 +415,9 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
 
     seg_ids = []
     chunksize = int(chunksize)
-    for i in trange(0, len(coords), chunksize, desc='Fetching segmentation IDs'):
+    for i in trange(0, len(coords), chunksize,
+                    desc='Fetching segmentation IDs',
+                    leave=False):
         chunk = coords[i: i + chunksize]
 
         post = dict(locations=[','.join(c) for c in chunk.astype(str)])
