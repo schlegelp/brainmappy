@@ -365,7 +365,8 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
 
 
 def get_seg_at_location(coords, volume_id=None, raw_coords=False,
-                        raw_vox_dims=None, chunksize=10e3, session=None):
+                        raw_vox_dims=None, chunksize=10e3, max_retries=10,
+                        session=None):
     """Return meshes for given object ID.
 
     Parameters
@@ -383,6 +384,9 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
                         voxel dimensions from ``get_volume_info``.
     chunksize :         int, optional
                         Use to split query in chunks.
+    max_retries :       int, optional
+                        Max number of retries when fetching a chunk of segment
+                        IDs.
     session :           AuthorizedSession
                         Get from ``brainmappy.acquire_credentials``.
                         If None, will search in globals.
