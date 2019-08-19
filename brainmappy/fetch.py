@@ -16,6 +16,7 @@
 """
 
 import functools
+import math
 import urllib
 
 from .auth import _eval_session, _eval_volumeId
@@ -25,6 +26,7 @@ from tqdm import trange
 
 import numpy as np
 import pandas as pd
+from scipy.cluster.vq import kmeans2
 
 
 @functools.lru_cache(maxsize=32)
@@ -411,21 +413,33 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     # Coords must not be float
     coords = coords.astype(int)
 
+    # The backend is better at fetching data if each chunk contains spatial
+    # close points:
+    n_chunks = math.ceil(len(coords) / chunksize)
+    centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
+
     url = _make_url('v1', 'volumes', volume_id, 'values')
 
-    seg_ids = []
-    chunksize = int(chunksize)
-    for i in trange(0, len(coords), chunksize,
+    seg_ids = np.zeros(len(coords))
+    for i in trange(n_chunks,
                     desc='Fetching segmentation IDs',
                     leave=False):
-        chunk = coords[i: i + chunksize]
+        chunk = coords[labels == i]
 
         post = dict(locations=[','.join(c) for c in chunk.astype(str)])
 
-        resp = session.post(url, json=post)
+        # Try this max_retries times
+        for _ in range(int(max_retries)):
+            resp = session.post(url, json=post)
+            if resp.status_code == 200:
+                break
+        # Final raise if even the last request failed
         resp.raise_for_status()
 
-        seg_ids += resp.json()['uint64StrList']['values']
+        try:
+            seg_ids[labels == i] = resp.json()['uint64StrList']['values']
+        except KeyError:
+            raise KeyError('Unable to parse response: {}'.format(resp.json()))
 
     return seg_ids
 

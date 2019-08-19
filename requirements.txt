@@ -1,6 +1,7 @@
 tqdm
 numpy
 pandas
+scipy
 six
 setuptools
 requests
