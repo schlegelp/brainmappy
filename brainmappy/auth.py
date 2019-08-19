@@ -112,7 +112,12 @@ def _eval_session(session=None, raise_error=True):
         if raise_error:
             raise TypeError(error)
 
+    # Refresh stale credentials
+    if session.credentials.expired:
+        session.credentials.refresh(Request())
+
     return session
+
 
 def _eval_volumeId(volumeId, raise_error=True):
     """Evaluate volume Id and checks for globally defined service."""
