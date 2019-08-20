@@ -454,6 +454,7 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
             # The kmeans cluster will be spatially close but will vary in size
             # In theory they could become bigger than the 10k cap
             # -> We will have to cater for that possibility
+            this_seg_ids = []
             for k in range(0, chunk.shape[0], 10000):
                 mini_chunk = chunk[k: k + 10000]
 
@@ -467,12 +468,12 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
                 # Final raise if even the last request failed
                 resp.raise_for_status()
 
-                try:
-                    seg_ids[labels == i][k: k + 10000] = resp.json()['uint64StrList']['values']
-                except KeyError:
-                    raise KeyError('Unable to parse response: {}'.format(resp.json()))
-
                 pbar.update(len(mini_chunk))
+
+                this_seg_ids = np.append(this_seg_ids,
+                                         resp.json()['uint64StrList']['values'])
+
+            seg_ids[labels == i] = this_seg_ids
 
     return seg_ids.astype(int)
 
