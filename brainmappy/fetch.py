@@ -28,6 +28,9 @@ import numpy as np
 import pandas as pd
 from scipy.cluster.vq import kmeans2
 
+from . import utils
+use_pbars = utils.use_pbars
+
 
 @functools.lru_cache(maxsize=32)
 def get_schemas(session=None):
@@ -341,7 +344,8 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
     # There is a hard cap of 100 fragments per query
     verts = None
     faces = None
-    for i in trange(0, len(frags), 100, desc='Fetching mesh batches'):
+    for i in trange(0, len(frags), 100, desc='Fetching mesh batches',
+                    leave=False, disable=use_pbars):
         chunk = frags[i: i + 100]
 
         post = dict(volumeId=volume_id,
@@ -427,7 +431,8 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     seg_ids = np.zeros(len(coords))
     for i in trange(n_chunks,
                     desc='Fetching segmentation IDs',
-                    leave=False):
+                    leave=False,
+                    disable=use_pbars):
         chunk = coords[labels == i]
 
         post = dict(locations=[','.join(c) for c in chunk.astype(str)])
