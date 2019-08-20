@@ -18,6 +18,7 @@
 import functools
 import math
 import urllib
+import warnings
 
 from .auth import _eval_session, _eval_volumeId
 from .io import parse_raw_ng
@@ -424,7 +425,11 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     # The backend is better at fetching data if each chunk contains spatial
     # close points:
     n_chunks = math.ceil(len(coords) / chunksize)
-    centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
+
+    # Cluster but catch UserWarning if we get less than n_chunks clusters
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
 
     url = _make_url('v1', 'volumes', volume_id, 'values')
 
@@ -434,6 +439,10 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
                     leave=False,
                     disable=use_pbars):
         chunk = coords[labels == i]
+
+        # Skip empty chunks
+        if chunk.shape[0] == 0:
+            continue
 
         post = dict(locations=[','.join(c) for c in chunk.astype(str)])
 
