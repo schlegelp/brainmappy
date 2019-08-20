@@ -23,7 +23,7 @@ import warnings
 from .auth import _eval_session, _eval_volumeId
 from .io import parse_raw_ng
 
-from tqdm import trange
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
@@ -345,26 +345,31 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
     # There is a hard cap of 100 fragments per query
     verts = None
     faces = None
-    for i in trange(0, len(frags), 100, desc='Fetching mesh batches',
-                    leave=False, disable=use_pbars):
-        chunk = frags[i: i + 100]
+    with tqdm(desc='Fetching mesh batches',
+              leave=False,
+              total=len(frags),
+              disable=not use_pbars) as pbar:
+        for i in range(0, len(frags), 100):
+            chunk = frags[i: i + 100]
 
-        post = dict(volumeId=volume_id,
-                    meshName=mesh_name,
-                    batches=[{'object_id': ob,
-                              'fragment_keys': [fr]} for (ob, fr) in chunk])
+            post = dict(volumeId=volume_id,
+                        meshName=mesh_name,
+                        batches=[{'object_id': ob,
+                                  'fragment_keys': [fr]} for (ob, fr) in chunk])
 
-        resp = session.post(url, json=post)
+            resp = session.post(url, json=post)
 
-        # Parse binary data
-        obj_id, frag_ids, v, f = parse_raw_ng(resp.content)
+            # Parse binary data
+            obj_id, frag_ids, v, f = parse_raw_ng(resp.content)
 
-        # Combine chunks - make sure to offset faces
-        faces = f if faces is None else np.append(faces,
-                                                  f + verts.shape[0],
-                                                  axis=0)
-        verts = v if verts is None else np.append(verts,
-                                                  v, axis=0)
+            # Combine chunks - make sure to offset faces
+            faces = f if faces is None else np.append(faces,
+                                                      f + verts.shape[0],
+                                                      axis=0)
+            verts = v if verts is None else np.append(verts,
+                                                      v, axis=0)
+
+            pbar.update(len(chunk))
 
     return verts, faces
 
@@ -421,6 +426,9 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     # Coords must not be float
     coords = coords.astype(int)
 
+    # Enforce max chunksize
+    chunksize = min(chunksize, 10e3)
+
     # The backend is better at fetching data if each chunk contains spatial
     # close points:
     n_chunks = math.ceil(len(coords) / chunksize)
@@ -433,30 +441,38 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     url = _make_url('v1', 'volumes', volume_id, 'values')
 
     seg_ids = np.zeros(len(coords))
-    for i in trange(n_chunks,
-                    desc='Fetching segmentation IDs',
-                    leave=False,
-                    disable=not use_pbars):
-        chunk = coords[labels == i]
+    with tqdm(desc='Fetching segmentation IDs', leave=False,
+              total=len(coords), disable=not use_pbars) as pbar:
+        for i in range(n_chunks):
+            # Get this chunk's coordinates
+            chunk = coords[labels == i]
 
-        # Skip empty chunks
-        if chunk.shape[0] == 0:
-            continue
+            # Skip empty chunks
+            if chunk.shape[0] == 0:
+                continue
 
-        post = dict(locations=[','.join(c) for c in chunk.astype(str)])
+            # The kmeans cluster will be spatially close but will vary in size
+            # In theory they could become bigger than the 10k cap
+            # -> We will have to cater for that possibility
+            for k in range(0, chunk.shape[0], 10000):
+                mini_chunk = chunk[k: k + 10000]
 
-        # Try this max_retries times
-        for _ in range(int(max_retries)):
-            resp = session.post(url, json=post)
-            if resp.status_code == 200:
-                break
-        # Final raise if even the last request failed
-        resp.raise_for_status()
+                post = dict(locations=[','.join(c) for c in mini_chunk.astype(str)])
 
-        try:
-            seg_ids[labels == i] = resp.json()['uint64StrList']['values']
-        except KeyError:
-            raise KeyError('Unable to parse response: {}'.format(resp.json()))
+                # Try this max_retries times
+                for _ in range(int(max_retries)):
+                    resp = session.post(url, json=post)
+                    if resp.status_code == 200:
+                        break
+                # Final raise if even the last request failed
+                resp.raise_for_status()
+
+                try:
+                    seg_ids[labels == i][k: k + 10000] = resp.json()['uint64StrList']['values']
+                except KeyError:
+                    raise KeyError('Unable to parse response: {}'.format(resp.json()))
+
+                pbar.update(len(mini_chunk))
 
     return seg_ids.astype(int)
 
