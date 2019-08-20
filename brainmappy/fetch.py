@@ -400,7 +400,7 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     Returns
     -------
     List of segmentation IDs
-                        Segment ID "0" indicates unmapped location.
+                        Segment ID 0 indicates unmapped location.
 
     """
 
@@ -459,7 +459,7 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
         except KeyError:
             raise KeyError('Unable to parse response: {}'.format(resp.json()))
 
-    return seg_ids
+    return seg_ids.astype(int)
 
 
 def _make_url(*args, **GET):
