@@ -413,8 +413,7 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
         if isinstance(raw_vox_dims, type(None)):
             vinfo = get_volume_info(volume_id, session=session)
             raw_vox_dims = [vinfo[0]['pixelSize'][d] for d in ['x', 'y', 'z']]
-
-        if not isinstance(raw_vox_dims, np.ndarray):
+        elif not isinstance(raw_vox_dims, np.ndarray):
             raw_vox_dims = np.array(raw_vox_dims)
 
         coords = coords / raw_vox_dims
@@ -437,7 +436,7 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     for i in trange(n_chunks,
                     desc='Fetching segmentation IDs',
                     leave=False,
-                    disable=use_pbars):
+                    disable=not use_pbars):
         chunk = coords[labels == i]
 
         # Skip empty chunks
