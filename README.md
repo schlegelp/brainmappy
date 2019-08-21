@@ -17,12 +17,24 @@ Automatically installed with `pip`:
 
 ## Brainmaps credentials
 
-1. Get access to Google's brainmaps API.
-2. Go to [Google developer's console](https://console.developers.google.com).
-3. Create a new project and activate the brainmaps API for this project via
-   the dashboard.
-4. Generate an OAuth 2.0 client ID for the project and save `client ID` and
-   `client secret` as `client_secret.json`
+First, you need to need to be granted permission to use the API. The next steps
+depend on your level of access:
+
+### Developers
+
+Developers can setup and enable the brainmaps API for projects through
+through Google's developer's console:
+
+1. Go to [Google developer's console](https://console.developers.google.com).
+2. Create a new project (top right) and activate the brainmaps API for this
+   project via *ENABLE APIS AND SERVICES* on the dashboard.
+3. Go to *Credentials* and generate an OAuth 2.0 client ID for the project.
+4. Download `client ID` and `client secret` as `client_secret.json`
+
+#### Users
+
+As a user you will be able to use the brainmaps API but you need somebody with
+developer-level access to provide you with a `client_secret.json`.
 
 ## Examples
 
