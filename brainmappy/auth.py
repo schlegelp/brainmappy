@@ -16,13 +16,14 @@
 
 import os
 import sys
-import json
 import pickle
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import AuthorizedSession
 from google.auth.transport.requests import Request
 from six.moves import http_client
+
+__all__ = ['acquire_credentials', 'set_global_volume']
 
 _BRAINMAPS_SCOPES = ["https://www.googleapis.com/auth/brainmaps"]
 _REFRESH_CODES = (http_client.UNAUTHORIZED, http_client.FORBIDDEN)
