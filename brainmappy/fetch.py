@@ -20,6 +20,8 @@ import math
 import urllib
 import warnings
 
+from requests_futures.sessions import FuturesSession
+
 from .auth import _eval_session, _eval_volumeId
 from .io import parse_raw_ng
 
@@ -389,8 +391,7 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
 
 
 def get_seg_at_location(coords, volume_id=None, raw_coords=False,
-                        raw_vox_dims=None, chunksize=10e3, max_retries=10,
-                        session=None):
+                        raw_px_dims=None, max_threads=10, session=None):
     """Return meshes for given object ID.
 
     Parameters
@@ -403,14 +404,12 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     raw_coords :        bool, optional
                         Whether ``coords`` is in raw coordinates. If True, will
                         not convert ``coords`` into voxel coordinates.
-    raw_vox_dims :      tuple, optional
-                        Size of voxels. If not provided will attempt to get
+    raw_px_dims :       tuple, optional
+                        Size of pixels. If not provided will attempt to get
                         voxel dimensions from ``get_volume_info``.
-    chunksize :         int, optional
-                        Use to split query in chunks.
-    max_retries :       int, optional
-                        Max number of retries when fetching a chunk of segment
-                        IDs.
+    max_threads :       int, optional
+                        Max number of parallel requests. Reduce if you run into
+                        any issues.
     session :           AuthorizedSession
                         Get from ``brainmappy.acquire_credentials``.
                         If None, will search in globals.
@@ -424,27 +423,77 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     """
 
     session = _eval_session(session)
+    future_session = FuturesSession(session=session, max_workers=max_threads)
     volume_id = _eval_volumeId(volume_id)
+    url = _make_url('v1', 'volumes', volume_id, 'values')
+
+    # Hard coded max chunk size
+    chunksize = 2e2
 
     coords = np.array(coords) if not isinstance(coords, np.ndarray) else coords
 
     if not raw_coords:
-        if isinstance(raw_vox_dims, type(None)):
+        if isinstance(raw_px_dims, type(None)):
             vinfo = get_volume_info(volume_id, session=session)
-            raw_vox_dims = [vinfo[0]['pixelSize'][d] for d in ['x', 'y', 'z']]
-        elif not isinstance(raw_vox_dims, np.ndarray):
-            raw_vox_dims = np.array(raw_vox_dims)
+            raw_px_dims = [vinfo[0]['pixelSize'][d] for d in ['x', 'y', 'z']]
+        elif not isinstance(raw_px_dims, np.ndarray):
+            raw_px_dims = np.array(raw_px_dims)
 
-        coords = coords / raw_vox_dims
+        coords = coords / raw_px_dims
 
     # Coords must not be float
-    coords = coords.astype(int)
+    coords = np.round(coords).astype(int)
 
-    # Enforce max chunksize
-    chunksize = min(chunksize, 10e3)
+    # This is legacy code - I'll keep it for a little in case it becomes
+    # useful again
+    """
+    # Hard coded block size
+    blocksize = 64
 
-    # The backend is better at fetching data if each chunk contains spatial
-    # close points:
+    # Sort coords in blocks
+    bins = np.arange(0, np.max(coords) + blocksize, blocksize)
+
+    cbin = pd.DataFrame(coords)
+    cbin['x_bin'] = pd.cut(cbin[0], bins, include_lowest=True)
+    cbin['y_bin'] = pd.cut(cbin[1], bins, include_lowest=True)
+    cbin['z_bin'] = pd.cut(cbin[2], bins, include_lowest=True)
+
+    blocked = list(cbin.groupby(['x_bin', 'y_bin', 'z_bin']).indices.values())
+
+    # Make sure none of the blocks is larger than hard-coded limit
+    blocks = []
+    for b in blocked:
+        blocks += np.split(b, math.ceil(len(b) / chunksize))
+
+    block_co = [coords[b] for b in blocks]
+
+    posts = [dict(locations=[','.join(c) for c in b.astype(str)]) for b in block_co]
+
+    futures = [future_session.post(url, json=p) for p in posts]
+
+    # Get the responses
+    resp = []
+    with tqdm(desc='Fetching segmentation IDs', leave=False,
+              total=len(coords), disable=not use_pbars) as pbar:
+        for f, b in zip(futures, blocks):
+            resp.append(f.result())
+            pbar.update(len(b))
+
+    # Make sure all futures returned data
+    for r in resp:
+        r.raise_for_status()
+
+    # Extract IDs
+    block_ids = [r.json()['uint64StrList']['values'] for r in resp]
+
+    # Populate segment IDs
+    seg_ids = np.zeros(len(coords))
+    for b, i in zip(blocks, block_ids):
+        seg_ids[b] = i
+
+    return seg_ids.astype(int)
+    """
+
     n_chunks = math.ceil(len(coords) / chunksize)
 
     # Cluster but catch UserWarning if we get less than n_chunks clusters
@@ -452,42 +501,45 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
         warnings.simplefilter("ignore")
         centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
 
-    url = _make_url('v1', 'volumes', volume_id, 'values')
+    seg_ix = []
+    posts = []
+    for i in range(n_chunks):
+        # Get this chunk's coordinates
+        ix = np.where(labels == i)[0]
+        chunk = coords[ix]
 
-    seg_ids = np.zeros(len(coords))
+        # Skip empty chunks
+        if chunk.shape[0] == 0:
+            continue
+
+        # The kmeans cluster will be spatially close but will vary in size
+        # They will become bigger than the 200 cap so we have to chop it up
+        for k in range(0, chunk.shape[0], int(chunksize)):
+            mini_chunk = chunk[k: k + int(chunksize)]
+            seg_ix.append(ix[k: k + int(chunksize)])
+            posts.append(dict(locations=[','.join(c) for c in mini_chunk.astype(str)]))
+
+    futures = [future_session.post(url, json=p) for p in posts]
+
+    # Get the responses
+    resp = []
     with tqdm(desc='Fetching segmentation IDs', leave=False,
               total=len(coords), disable=not use_pbars) as pbar:
-        for i in range(n_chunks):
-            # Get this chunk's coordinates
-            chunk = coords[labels == i]
+        for f, s in zip(futures, seg_ix):
+            resp.append(f.result())
+            pbar.update(len(s))
 
-            # Skip empty chunks
-            if chunk.shape[0] == 0:
-                continue
+    # Make sure all futures returned data
+    for r in resp:
+        r.raise_for_status()
 
-            # The kmeans cluster will be spatially close but will vary in size
-            # In theory they could become bigger than the 10k cap
-            # -> We will have to cater for that possibility
-            this_seg_ids = []
-            for k in range(0, chunk.shape[0], 10000):
-                mini_chunk = chunk[k: k + 10000]
+    # Extract IDs
+    ids = [r.json()['uint64StrList']['values'] for r in resp]
 
-                post = dict(locations=[','.join(c) for c in mini_chunk.astype(str)])
-
-                # Try this max_retries times
-                for _ in range(int(max_retries)):
-                    resp = session.post(url, json=post)
-                    if resp.status_code == 200:
-                        break
-                # Final raise if even the last request failed
-                resp.raise_for_status()
-
-                pbar.update(len(mini_chunk))
-
-                this_seg_ids = np.append(this_seg_ids,
-                                         resp.json()['uint64StrList']['values'])
-
-            seg_ids[labels == i] = this_seg_ids
+    # Populate segment IDs
+    seg_ids = np.zeros(len(coords))
+    for ix, i in zip(seg_ix, ids):
+        seg_ids[ix] = i
 
     return seg_ids.astype(int)
 

@@ -7,3 +7,4 @@ setuptools
 requests
 google-auth
 google-auth-oauthlib
+requests_futures
