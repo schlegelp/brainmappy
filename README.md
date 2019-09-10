@@ -31,7 +31,7 @@ through Google's developer's console:
 3. Go to *Credentials* and generate an OAuth 2.0 client ID for the project.
 4. Download `client ID` and `client secret` as `client_secret.json`
 
-#### Users
+### Users
 
 As a user you will be able to use the brainmaps API but you need somebody with
 developer-level access to provide you with a `client_secret.json`.
