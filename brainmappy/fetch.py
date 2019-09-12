@@ -442,7 +442,8 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
         coords = coords / raw_px_dims
 
     # Coords must not be float
-    coords = np.round(coords).astype(int)
+    # Do not remove  ".astype(float)": if coords are objects round() errors out
+    coords = np.round(coords.astype(float)).astype(int)
 
     # This is legacy code - I'll keep it for a little in case it becomes
     # useful again
