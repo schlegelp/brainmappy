@@ -390,8 +390,15 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
     return verts, faces
 
 
-def get_seg_at_location(coords, volume_id=None, raw_coords=False,
-                        raw_px_dims=None, max_threads=10, session=None):
+def get_seg_at_location(
+    coords,
+    volume_id=None,
+    change_stack_id=None,
+    raw_coords=False,
+    raw_px_dims=None,
+    max_threads=10,
+    session=None,
+):
     """Return meshes for given object ID.
 
     Parameters
@@ -445,62 +452,14 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
     # Do not remove  ".astype(float)": if coords are objects round() errors out
     coords = np.round(coords.astype(float)).astype(int)
 
-    # This is legacy code - I'll keep it for a little in case it becomes
-    # useful again
-    """
-    # Hard coded block size
-    blocksize = 64
-
-    # Sort coords in blocks
-    bins = np.arange(0, np.max(coords) + blocksize, blocksize)
-
-    cbin = pd.DataFrame(coords)
-    cbin['x_bin'] = pd.cut(cbin[0], bins, include_lowest=True)
-    cbin['y_bin'] = pd.cut(cbin[1], bins, include_lowest=True)
-    cbin['z_bin'] = pd.cut(cbin[2], bins, include_lowest=True)
-
-    blocked = list(cbin.groupby(['x_bin', 'y_bin', 'z_bin']).indices.values())
-
-    # Make sure none of the blocks is larger than hard-coded limit
-    blocks = []
-    for b in blocked:
-        blocks += np.split(b, math.ceil(len(b) / chunksize))
-
-    block_co = [coords[b] for b in blocks]
-
-    posts = [dict(locations=[','.join(c) for c in b.astype(str)]) for b in block_co]
-
-    futures = [future_session.post(url, json=p) for p in posts]
-
-    # Get the responses
-    resp = []
-    with tqdm(desc='Fetching segmentation IDs', leave=False,
-              total=len(coords), disable=not use_pbars) as pbar:
-        for f, b in zip(futures, blocks):
-            resp.append(f.result())
-            pbar.update(len(b))
-
-    # Make sure all futures returned data
-    for r in resp:
-        r.raise_for_status()
-
-    # Extract IDs
-    block_ids = [r.json()['uint64StrList']['values'] for r in resp]
-
-    # Populate segment IDs
-    seg_ids = np.zeros(len(coords))
-    for b, i in zip(blocks, block_ids):
-        seg_ids[b] = i
-
-    return seg_ids.astype(int)
-    """
-
-    n_chunks = math.ceil(len(coords) / chunksize)
-
     # Cluster but catch UserWarning if we get less than n_chunks clusters
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
+    n_chunks = math.ceil(len(coords) / chunksize)
+    if n_chunks > 1:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            centroid, labels = kmeans2(coords.astype(float), k=n_chunks)
+    else:
+        labels = np.zeros(len(coords))
 
     seg_ix = []
     posts = []
@@ -516,9 +475,13 @@ def get_seg_at_location(coords, volume_id=None, raw_coords=False,
         # The kmeans cluster will be spatially close but will vary in size
         # They will become bigger than the 200 cap so we have to chop it up
         for k in range(0, chunk.shape[0], int(chunksize)):
-            mini_chunk = chunk[k: k + int(chunksize)]
-            seg_ix.append(ix[k: k + int(chunksize)])
-            posts.append(dict(locations=[','.join(c) for c in mini_chunk.astype(str)]))
+            mini_chunk = chunk[k : k + int(chunksize)]
+            seg_ix.append(ix[k : k + int(chunksize)])
+            posts.append(dict(locations=[",".join(c) for c in mini_chunk.astype(str)]))
+
+    if change_stack_id:
+        for p in posts:
+            p['change_spec'] = {'change_stack_id': change_stack_id}
 
     futures = [future_session.post(url, json=p) for p in posts]
 
