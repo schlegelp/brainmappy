@@ -12,8 +12,7 @@
 #    GNU General Public License for more details.
 
 
-""" This module contains functions to convert data.
-"""
+"""This module contains functions to convert data."""
 
 import argparse
 import io
@@ -32,17 +31,17 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 
-__all__ = ['get_ng_meshes', 'parse_curls', 'parse_raw_ng', 'uncurl']
+__all__ = ["get_ng_meshes", "parse_curls", "parse_raw_ng", "uncurl"]
 
 parser = argparse.ArgumentParser()
-parser.add_argument('command')
-parser.add_argument('url')
-parser.add_argument('-d', '--data')
-parser.add_argument('-b', '--data-binary', default=None)
-parser.add_argument('-X', default='')
-parser.add_argument('-H', '--header', action='append', default=[])
-parser.add_argument('--compressed', action='store_true')
-parser.add_argument('--insecure', action='store_true')
+parser.add_argument("command")
+parser.add_argument("url")
+parser.add_argument("-d", "--data")
+parser.add_argument("-b", "--data-binary", default=None)
+parser.add_argument("-X", default="")
+parser.add_argument("-H", "--header", action="append", default=[])
+parser.add_argument("--compressed", action="store_true")
+parser.add_argument("--insecure", action="store_true")
 
 
 def get_ng_meshes(x=None):
@@ -62,29 +61,25 @@ def get_ng_meshes(x=None):
     """
     if isinstance(x, type(None)):
         # Read without any delimiting
-        x = pd.read_clipboard(delimiter='\t', header=None)[0].values
+        x = pd.read_clipboard(delimiter="\t", header=None)[0].values
 
     # Parse the curls
     re = parse_curls(x)
 
     # Discard Requests that don't point to meshes
-    req = [r for r in re if r.method == 'POST']
-    req = [r for r in re if 'batches' in r.data]
+    req = [r for r in re if r.method == "POST"]
+    req = [r for r in re if "batches" in r.data]
 
     if len(req) == 0:
-        raise ValueError('No valid mesh cURLs found.')
+        raise ValueError("No valid mesh cURLs found.")
 
     # Now retrieve data
     future_session = FuturesSession(max_workers=10)
 
     # For some reason .send() does not work concurrently, only .get()
     # and .post() do
-    futures = [future_session.post(r.url,
-                                   data=r.data,
-                                   headers=r.headers) for r in req]
-    responses = [f.result() for f in tqdm(futures,
-                                          desc='Fetching meshes',
-                                          leave=False)]
+    futures = [future_session.post(r.url, data=r.data, headers=r.headers) for r in req]
+    responses = [f.result() for f in tqdm(futures, desc="Fetching meshes", leave=False)]
 
     # Raise errors, if any
     for r in responses:
@@ -92,28 +87,28 @@ def get_ng_meshes(x=None):
 
     # Parse data
     data = {}
-    for r in tqdm(responses, desc='Extracting data', leave=False):
+    for r in tqdm(responses, desc="Extracting data", leave=False):
         object_id, filename, verts, faces = parse_raw_ng(r.content)
 
         if object_id not in data:
             data[object_id] = dict(fragments=[], verts=[], faces=[])
 
-        data[object_id]['fragments'].append(filename)
-        data[object_id]['verts'].append(verts)
-        data[object_id]['faces'].append(faces)
+        data[object_id]["fragments"].append(filename)
+        data[object_id]["verts"].append(verts)
+        data[object_id]["faces"].append(faces)
 
     # If we have multiple fragments per object, we need to add an offset
     # to the faces before merging
     for ob in data:
-        for i, faces in enumerate(data[ob]['faces'][1:]):
+        for i, faces in enumerate(data[ob]["faces"][1:]):
             # Get number of previous verts
-            n_prev = sum([v.shape[0] for v in data[ob]['verts'][:i + 1]])
+            n_prev = sum([v.shape[0] for v in data[ob]["verts"][: i + 1]])
             faces += n_prev
 
     # Stack vertices and faces
     for ob in data:
-        data[ob]['verts'] = np.vstack(data[ob]['verts'])
-        data[ob]['faces'] = np.vstack(data[ob]['faces'])
+        data[ob]["verts"] = np.vstack(data[ob]["verts"])
+        data[ob]["faces"] = np.vstack(data[ob]["faces"])
 
     return data
 
@@ -134,14 +129,14 @@ def parse_curls(x):
 
     """
     if isinstance(x, str) and os.path.isfile(x):
-        with open(x, 'r') as f:
+        with open(x, "r") as f:
             return [uncurl(line) for line in f]
     else:
         return [uncurl(c) for c in x]
 
 
 def uncurl(curl):
-    """ This code is based on `uncurl <https://github.com/spulec/uncurl>`_ and
+    """This code is based on `uncurl <https://github.com/spulec/uncurl>`_ and
     was modified to return an actual requests object instead of a formatted
     string.
 
@@ -163,22 +158,22 @@ def uncurl(curl):
     """
 
     # Remove trailing semi-colons and whitespaces
-    curl = curl.strip(';')
+    curl = curl.strip(";")
     curl = curl.strip()
 
     tokens = shlex.split(curl)
     parsed_args = parser.parse_args(tokens)
 
-    if parsed_args.X.upper() == 'POST':
-        method = 'POST'
+    if parsed_args.X.upper() == "POST":
+        method = "POST"
     else:
-        method = 'GET'
+        method = "GET"
 
     post_data = parsed_args.data or parsed_args.data_binary
 
     if post_data:
         # Make sure method is POST if there is postdata
-        method = 'POST'
+        method = "POST"
         try:
             post_data_json = json.loads(post_data)
         except ValueError:
@@ -188,24 +183,29 @@ def uncurl(curl):
     quoted_headers = OrderedDict()
 
     for curl_header in parsed_args.header:
-        if curl_header.startswith(':'):
-            occurrence = [m.start() for m in re.finditer(':', curl_header)]
-            header_key, header_value = (curl_header[:occurrence[1]],
-                                        curl_header[occurrence[1] + 1:])
+        if curl_header.startswith(":"):
+            occurrence = [m.start() for m in re.finditer(":", curl_header)]
+            header_key, header_value = (
+                curl_header[: occurrence[1]],
+                curl_header[occurrence[1] + 1 :],
+            )
         else:
             header_key, header_value = curl_header.split(":", 1)
 
-        if header_key.lower() == 'cookie':
+        if header_key.lower() == "cookie":
             cookie = Cookie.SimpleCookie(header_value)
             for key in cookie:
                 cookie_dict[key] = cookie[key].value
         else:
             quoted_headers[header_key] = header_value.strip()
 
-    return requests.Request(method, parsed_args.url,
-                            data=post_data_json,
-                            headers=quoted_headers,
-                            cookies=cookie_dict)
+    return requests.Request(
+        method,
+        parsed_args.url,
+        data=post_data_json,
+        headers=quoted_headers,
+        cookies=cookie_dict,
+    )
 
 
 def parse_raw_ng(x):
@@ -238,7 +238,7 @@ def parse_raw_ng(x):
 
     """
     if not isinstance(x, (bytes, io.BufferedIOBase)):
-        raise TypeError('Unable to parse data of type {}'.format(type(x)))
+        raise TypeError("Unable to parse data of type {}".format(type(x)))
 
     # Turn bytes into a file-like object if necessary
     f = io.BytesIO(x) if isinstance(x, bytes) else x
@@ -249,16 +249,15 @@ def parse_raw_ng(x):
     faces = []
     filenames = []
     while f.tell() < size:
-        object_id, filenamelen = struct.unpack('qi4x', f.read(16))
-        fn, n_verts, n_faces = struct.unpack('{}s2q'.format(filenamelen),
-                                             f.read(filenamelen + 8 + 8))
+        object_id, filenamelen = struct.unpack("qi4x", f.read(16))
+        fn, n_verts, n_faces = struct.unpack(
+            "{}s2q".format(filenamelen), f.read(filenamelen + 8 + 8)
+        )
 
-        this_verts = struct.unpack('{}f'.format(n_verts * 3),
-                                   f.read(n_verts * 3 * 4))
+        this_verts = struct.unpack("{}f".format(n_verts * 3), f.read(n_verts * 3 * 4))
         this_verts = np.array(this_verts).reshape((n_verts, 3))
 
-        this_faces = struct.unpack('{}i'.format(n_faces * 3),
-                                   f.read(n_faces * 3 * 4))
+        this_faces = struct.unpack("{}i".format(n_faces * 3), f.read(n_faces * 3 * 4))
         this_faces = np.array(this_faces).reshape((n_faces, 3))
 
         # Make sure to add an offset to the faces

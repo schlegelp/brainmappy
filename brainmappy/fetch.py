@@ -12,8 +12,7 @@
 #    GNU General Public License for more details.
 
 
-""" This module contains functions to fetch data via Google's brainmaps API.
-"""
+"""This module contains functions to fetch data via Google's brainmaps API."""
 
 import functools
 import math
@@ -32,21 +31,20 @@ import pandas as pd
 from scipy.cluster.vq import kmeans2
 
 from . import utils
-use_pbars = utils.use_pbars
 
 __all__ = [
-            'get_change_stacks',
-            'get_datasets',
-            'get_fragments',
-            'get_mesh_list',
-            'get_meshes_batch',
-            'get_projects',
-            'get_resource_list',
-            'get_schemas',
-            'get_seg_at_location',
-            'get_volume_info',
-            'get_volumes',
-          ]
+    "get_change_stacks",
+    "get_datasets",
+    "get_fragments",
+    "get_mesh_list",
+    "get_meshes_batch",
+    "get_projects",
+    "get_resource_list",
+    "get_schemas",
+    "get_seg_at_location",
+    "get_volume_info",
+    "get_volumes",
+]
 
 
 @functools.lru_cache(maxsize=32)
@@ -66,7 +64,7 @@ def get_schemas(session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('$discovery', 'rest')
+    url = _make_url("$discovery", "rest")
     resp = session.get(url)
 
     resp.raise_for_status()
@@ -91,12 +89,12 @@ def get_volumes(session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'volumes')
+    url = _make_url("v1", "volumes")
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return resp.json()['volumeId']
+    return resp.json()["volumeId"]
 
 
 @functools.lru_cache(maxsize=32)
@@ -126,12 +124,12 @@ def get_volume_info(volume_id, session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'volumes', volume_id)
+    url = _make_url("v1", "volumes", volume_id)
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return resp.json()['geometry']
+    return resp.json()["geometry"]
 
 
 @functools.lru_cache(maxsize=32)
@@ -159,12 +157,12 @@ def get_mesh_list(volume_id, session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'objects', volume_id, 'meshes')
+    url = _make_url("v1", "objects", volume_id, "meshes")
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return resp.json().get('meshes', None)
+    return resp.json().get("meshes", None)
 
 
 @functools.lru_cache(maxsize=32)
@@ -188,7 +186,7 @@ def get_resource_list(object_id, volume_id, session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'volumes', volume_id, 'objects', object_id, 'resources')
+    url = _make_url("v1", "volumes", volume_id, "objects", object_id, "resources")
     resp = session.get(url)
 
     resp.raise_for_status()
@@ -213,12 +211,12 @@ def get_projects(session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'projects')
+    url = _make_url("v1", "projects")
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return pd.DataFrame.from_records(resp.json()['project'])
+    return pd.DataFrame.from_records(resp.json()["project"])
 
 
 @functools.lru_cache(maxsize=32)
@@ -240,12 +238,12 @@ def get_datasets(project_id, session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'datasets', project_id=project_id)
+    url = _make_url("v1", "datasets", project_id=project_id)
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return resp.json()['datasetIds']
+    return resp.json()["datasetIds"]
 
 
 @functools.lru_cache(maxsize=32)
@@ -267,16 +265,21 @@ def get_change_stacks(volume_id, session=None):
     """
     session = _eval_session(session)
 
-    url = _make_url('v1', 'changes', volume_id, 'change_stacks')
+    url = _make_url("v1", "changes", volume_id, "change_stacks")
     resp = session.get(url)
 
     resp.raise_for_status()
 
-    return resp.json()['changeStackId']
+    return resp.json()["changeStackId"]
 
 
-def get_fragments(object_id, volume_id=None, mesh_name='mcws_quad1e6',
-                  session=None, change_stack_id=None):
+def get_fragments(
+    object_id,
+    volume_id=None,
+    mesh_name="mcws_quad1e6",
+    session=None,
+    change_stack_id=None,
+):
     """Return fragments constituting a given object.
 
     Parameters
@@ -303,13 +306,18 @@ def get_fragments(object_id, volume_id=None, mesh_name='mcws_quad1e6',
     session = _eval_session(session)
     volume_id = _eval_volumeId(volume_id)
 
-    url = _make_url('v1', 'objects', volume_id, 'meshes',
-                    mesh_name + ':listfragments',
-                    objectId=object_id,
-                    returnSupervoxelIds=True)
+    url = _make_url(
+        "v1",
+        "objects",
+        volume_id,
+        "meshes",
+        mesh_name + ":listfragments",
+        objectId=object_id,
+        returnSupervoxelIds=True,
+    )
 
     if change_stack_id:
-        url += urllib.parse.urlencode({'header.changeStackId': change_stack_id})
+        url += urllib.parse.urlencode({"header.changeStackId": change_stack_id})
 
     resp = session.get(url)
     resp.raise_for_status()
@@ -317,13 +325,18 @@ def get_fragments(object_id, volume_id=None, mesh_name='mcws_quad1e6',
     frags = resp.json()
 
     if not frags:
-        raise ValueError('No fragments found for object {}'.format(object_id))
+        raise ValueError("No fragments found for object {}".format(object_id))
 
-    return list(zip(frags['supervoxelId'], frags['fragmentKey']))
+    return list(zip(frags["supervoxelId"], frags["fragmentKey"]))
 
 
-def get_meshes_batch(object_id, volume_id=None, session=None,
-                     mesh_name='mcws_quad1e6', change_stack_id=None):
+def get_meshes_batch(
+    object_id,
+    volume_id=None,
+    session=None,
+    mesh_name="mcws_quad1e6",
+    change_stack_id=None,
+):
     """Return meshes for given object ID.
 
     Parameters
@@ -350,28 +363,35 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
     volume_id = _eval_volumeId(volume_id)
 
     # Get the fragments
-    frags = get_fragments(object_id=object_id,
-                          volume_id=volume_id,
-                          session=session,
-                          change_stack_id=change_stack_id,
-                          mesh_name=mesh_name)
+    frags = get_fragments(
+        object_id=object_id,
+        volume_id=volume_id,
+        session=session,
+        change_stack_id=change_stack_id,
+        mesh_name=mesh_name,
+    )
 
-    url = _make_url('v1', 'objects', 'meshes:batch')
+    url = _make_url("v1", "objects", "meshes:batch")
 
     # There is a hard cap of 100 fragments per query
     verts = None
     faces = None
-    with tqdm(desc='Fetching mesh batches',
-              leave=False,
-              total=len(frags),
-              disable=not use_pbars) as pbar:
+    with tqdm(
+        desc="Fetching mesh batches",
+        leave=False,
+        total=len(frags),
+        disable=not utils.use_pbars,
+    ) as pbar:
         for i in range(0, len(frags), 100):
-            chunk = frags[i: i + 100]
+            chunk = frags[i : i + 100]
 
-            post = dict(volumeId=volume_id,
-                        meshName=mesh_name,
-                        batches=[{'object_id': ob,
-                                  'fragment_keys': [fr]} for (ob, fr) in chunk])
+            post = dict(
+                volumeId=volume_id,
+                meshName=mesh_name,
+                batches=[
+                    {"object_id": ob, "fragment_keys": [fr]} for (ob, fr) in chunk
+                ],
+            )
 
             resp = session.post(url, json=post)
 
@@ -379,11 +399,8 @@ def get_meshes_batch(object_id, volume_id=None, session=None,
             obj_id, frag_ids, v, f = parse_raw_ng(resp.content)
 
             # Combine chunks - make sure to offset faces
-            faces = f if faces is None else np.append(faces,
-                                                      f + verts.shape[0],
-                                                      axis=0)
-            verts = v if verts is None else np.append(verts,
-                                                      v, axis=0)
+            faces = f if faces is None else np.append(faces, f + verts.shape[0], axis=0)
+            verts = v if verts is None else np.append(verts, v, axis=0)
 
             pbar.update(len(chunk))
 
@@ -432,7 +449,7 @@ def get_seg_at_location(
     session = _eval_session(session)
     future_session = FuturesSession(session=session, max_workers=max_threads)
     volume_id = _eval_volumeId(volume_id)
-    url = _make_url('v1', 'volumes', volume_id, 'values')
+    url = _make_url("v1", "volumes", volume_id, "values")
 
     # Hard coded max chunk size
     chunksize = 2e2
@@ -442,7 +459,7 @@ def get_seg_at_location(
     if not raw_coords:
         if isinstance(raw_px_dims, type(None)):
             vinfo = get_volume_info(volume_id, session=session)
-            raw_px_dims = [vinfo[0]['pixelSize'][d] for d in ['x', 'y', 'z']]
+            raw_px_dims = [vinfo[0]["pixelSize"][d] for d in "xyz"]
         elif not isinstance(raw_px_dims, np.ndarray):
             raw_px_dims = np.array(raw_px_dims)
 
@@ -487,8 +504,12 @@ def get_seg_at_location(
 
     # Get the responses
     resp = []
-    with tqdm(desc='Fetching segmentation IDs', leave=False,
-              total=len(coords), disable=not use_pbars) as pbar:
+    with tqdm(
+        desc="Fetching segmentation IDs",
+        leave=False,
+        total=len(coords),
+        disable=not utils.use_pbars,
+    ) as pbar:
         for f, s in zip(futures, seg_ix):
             resp.append(f.result())
             pbar.update(len(s))
@@ -498,7 +519,7 @@ def get_seg_at_location(
         r.raise_for_status()
 
     # Extract IDs
-    ids = [r.json()['uint64StrList']['values'] for r in resp]
+    ids = [r.json()["uint64StrList"]["values"] for r in resp]
 
     # Populate segment IDs
     seg_ids = np.zeros(len(coords))
@@ -532,13 +553,13 @@ def _make_url(*args, **GET):
 
     """
     # Generate the URL
-    url = 'https://brainmaps.googleapis.com/'
+    url = "https://brainmaps.googleapis.com/"
 
     for arg in args:
         arg_str = str(arg)
-        joiner = '' if url.endswith('/') else '/'
-        relative = arg_str[1:] if arg_str.startswith('/') else arg_str
+        joiner = "" if url.endswith("/") else "/"
+        relative = arg_str[1:] if arg_str.startswith("/") else arg_str
         url = url + joiner + relative
     if GET:
-        url += '?{}'.format(urllib.parse.urlencode(GET))
+        url += "?{}".format(urllib.parse.urlencode(GET))
     return url
