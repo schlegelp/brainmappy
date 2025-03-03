@@ -19,18 +19,17 @@ import math
 import urllib
 import warnings
 
-from requests_futures.sessions import FuturesSession
-
-from .auth import _eval_session, _eval_volumeId
-from .io import parse_raw_ng
-
-from tqdm import tqdm
-
 import numpy as np
 import pandas as pd
+import trimesh as tm
+
+from tqdm import tqdm
+from requests_futures.sessions import FuturesSession
 from scipy.cluster.vq import kmeans2
 
 from . import utils
+from .auth import _eval_session, _eval_volumeId
+from .io import parse_raw_ng
 
 __all__ = [
     "get_change_stacks",
@@ -111,7 +110,7 @@ def get_volume_info(volume_id, session=None):
 
     Returns
     -------
-    list of dictionarys
+    list of dictionaries
                         Dictionaries containing for each scale of this volume::
 
                          {'volumeSize': {'x': int, 'y': int, 'z': int},
@@ -275,8 +274,8 @@ def get_change_stacks(volume_id, session=None):
 
 def get_fragments(
     object_id,
+    mesh_name,
     volume_id=None,
-    mesh_name="mcws_quad1e6",
     session=None,
     change_stack_id=None,
 ):
@@ -286,11 +285,12 @@ def get_fragments(
     ----------
     object_id :         int
                         ID of object.
+    mesh_name :         str
+                        Name of meshes. Usually corresponds to resolution.
+                        See `get_mesh_list()` for available meshes.
     volume_id :         str | None, optional
                         ID of segmentation volume to use. If None, will search
                         in globals.
-    mesh_name :         str
-                        Name of meshes.
     session :           AuthorizedSession
                         Get from ``brainmappy.acquire_credentials``.
                         If None, will search in globals.
@@ -317,7 +317,7 @@ def get_fragments(
     )
 
     if change_stack_id:
-        url += urllib.parse.urlencode({"header.changeStackId": change_stack_id})
+        url += "&" + urllib.parse.urlencode({"header.changeStackId": change_stack_id})
 
     resp = session.get(url)
     resp.raise_for_status()
@@ -332,9 +332,9 @@ def get_fragments(
 
 def get_meshes_batch(
     object_id,
+    lod=0,
     volume_id=None,
     session=None,
-    mesh_name="mcws_quad1e6",
     change_stack_id=None,
 ):
     """Return meshes for given object ID.
@@ -343,14 +343,17 @@ def get_meshes_batch(
     ----------
     object_id :         int
                         ID of object.
+    lod :               int | str, optional
+                        Level of detail. Default is 0 (highest). Can also provide
+                        negative integers - e.g. -1 for the lowest available resolution.
+                        You can also provide a string which much correspond to the
+                        meshes' name - see `get_mesh_list()` for available meshes.
     volume_id :         str | None, optional
                         ID of segmentation volume to use. If not provided, will
                         use global.
     session :           AuthorizedSession
                         Get from ``brainmappy.acquire_credentials``.
                         If None, will search in globals.
-    mesh_name :         str
-                        Name of meshes.
     change_stack_id :   str, optional
                         If provided, will use alternative agglomeration stack.
 
@@ -361,6 +364,16 @@ def get_meshes_batch(
     """
     session = _eval_session(session)
     volume_id = _eval_volumeId(volume_id)
+
+    mesh_info = get_mesh_list(volume_id, session=session)
+
+    if isinstance(lod, int):
+        mesh_name = mesh_info[lod]["name"]
+    elif isinstance(lod, str):
+        assert lod in [m["name"] for m in mesh_info]
+        mesh_name = lod
+    else:
+        raise ValueError("lod must be int or str")
 
     # Get the fragments
     frags = get_fragments(
@@ -404,7 +417,7 @@ def get_meshes_batch(
 
             pbar.update(len(chunk))
 
-    return verts, faces
+    return tm.Trimesh(verts, faces)
 
 
 def get_seg_at_location(
